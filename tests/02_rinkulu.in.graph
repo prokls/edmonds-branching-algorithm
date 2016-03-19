@@ -1,0 +1,11 @@
+# http://www.iitg.ernet.in/rinkulu/combopt/slides/arbormincost.pdf
+6 9 1
+1 2 10
+1 3 2
+1 4 10
+2 3 1
+3 4 4
+4 5 2
+5 2 2
+4 6 4
+2 6 8
