@@ -233,44 +233,41 @@ def edmonds(V, E, root):
     E = list(filter(lambda e: e[1] != root, E))
     E = remove_multiedges(E)
 
-    for v in V:   # TODO: I don't think this is necessary!
-        if v == root:
-            continue
-        P = cheapest_edges(root, E)
-        print("c P = {}".format(P))
-        C = find_cycle(P)
-        if not C:
-            print("c found no cycle, returning {}".format(P))
-            return P
-        else:
-            print("c found a cycle: {}".format(C))
-        C_V = set(e[0] for e in C).union(set(e[1] for e in C))
+    P = cheapest_edges(root, E)
+    print("c P = {}".format(P))
+    C = find_cycle(P)
+    if not C:
+        print("c found no cycle, returning {}".format(P))
+        return P
+    else:
+        print("c found a cycle: {}".format(C))
+    C_V = set(e[0] for e in C).union(set(e[1] for e in C))
 
-        v_c = max(V) + 1
-        E_prime = []
-        correspondence = {}
-        for (s, d, w) in E:
-            if s not in C_V and d in C_V:
-                fe = filter(lambda e: e[0] == pi(d, E) and e[1] == d, E)
-                incoming_weight = list(map(lambda e: e[2], fe))[0]
-                correspondence[s, v_c, w - incoming_weight] = (s, d, w)
-                E_prime.append((s, v_c, w - incoming_weight))
-            elif s in C_V and d not in C_V:
-                correspondence[v_c, d, w] = (s, d, w)
-                E_prime.append((v_c, d, w))
-            elif s not in C_V and d not in C_V:
-                correspondence[s, d, w] = (s, d, w)
-                E_prime.append((s, d, w))
+    v_c = max(V) + 1
+    E_prime = []
+    correspondence = {}
+    for (s, d, w) in E:
+        if s not in C_V and d in C_V:
+            fe = filter(lambda e: e[0] == pi(d, E) and e[1] == d, E)
+            incoming_weight = list(map(lambda e: e[2], fe))[0]
+            correspondence[s, v_c, w - incoming_weight] = (s, d, w)
+            E_prime.append((s, v_c, w - incoming_weight))
+        elif s in C_V and d not in C_V:
+            correspondence[v_c, d, w] = (s, d, w)
+            E_prime.append((v_c, d, w))
+        elif s not in C_V and d not in C_V:
+            correspondence[s, d, w] = (s, d, w)
+            E_prime.append((s, d, w))
 
-        D_prime = (V + [v_c], E_prime)
-        A_prime = edmonds(D_prime[0], D_prime[1], root)
+    D_prime = (V + [v_c], E_prime)
+    A_prime = edmonds(D_prime[0], D_prime[1], root)
 
-        u, v, w = correspondence[unique_edge(v_c, A_prime)]
-        assert v in C_V
-        A_prime_corr = list(map(lambda e: correspondence[e], A_prime))
-        C_wo_pi_v = list(filter(lambda e: e[0] != pi(v, E) and e[1] != v, C))
-        print("c returning arborescence {}".format(A_prime_corr + C_wo_pi_v))
-        return A_prime_corr + C_wo_pi_v
+    u, v, w = correspondence[unique_edge(v_c, A_prime)]
+    assert v in C_V
+    A_prime_corr = list(map(lambda e: correspondence[e], A_prime))
+    C_wo_pi_v = list(filter(lambda e: e[0] != pi(v, E) and e[1] != v, C))
+    print("c returning arborescence {}".format(A_prime_corr + C_wo_pi_v))
+    return A_prime_corr + C_wo_pi_v
 
 
 def main(filepath):
