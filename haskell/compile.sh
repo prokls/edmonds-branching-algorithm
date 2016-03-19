@@ -1,4 +1,4 @@
-# or: runhaskell tree.hs
+# or: runhaskell edmonds.hs
 
 echo "[ ] Compiling ..."
 ghc -o edmonds edmonds.hs -threaded -prof -fprof-auto -fprof-cafs

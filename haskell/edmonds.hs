@@ -3,6 +3,7 @@ import Data.Char
 import Data.List
 import Data.Maybe
 import Text.Printf
+import System.Exit
 import System.Environment
 
 -- [Graph DATA STRUCTURE]
@@ -281,8 +282,16 @@ toString (Graph v e r) =
   showEdges e
 
 main :: IO ()
-main = do
-    [filepath] <- getArgs
-    putStrLn
-      =<< return . toString . computeEdmonds . fromString
-      =<< readFile filepath
+main =
+  do
+    args <- getArgs
+    let argc = length args
+    let filepath = head args
+    if argc == 1
+      then do
+        putStrLn
+          =<< return . toString . computeEdmonds . fromString
+          =<< readFile filepath
+      else do
+        putStrLn "usage: ./edmonds <di.graph>"
+        exitFailure -- (exitWith 1)
