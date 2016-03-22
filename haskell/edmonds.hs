@@ -50,10 +50,10 @@ fromString src = fromString' (filter (\ l -> noHash l && noBLine l) (lines src))
     noHash = (not . (isPrefixOf "#"))
     noBLine = (not . (isPrefixOf "b "))
 
-showEdges :: [Edge] -> String
-showEdges []     = ""
-showEdges (e:es) = (show $ src e) ++ " " ++ (show $ dst e) ++ " " ++
-                   (show $ weight e) ++ "\n" ++ (showEdges es)
+showEdges :: [Edge] -> String -> String
+showEdges _ []          = ""
+showEdges (e:es) prefix = prefix ++ (show $ src e) ++ " " ++ (show $ dst e) ++
+                          " " ++ (show $ weight e) ++ "\n" ++ (showEdges es prefix)
 
 toString :: Graph -> String
 toString (Graph vs es r) =
@@ -61,7 +61,7 @@ toString (Graph vs es r) =
     (show $ length es) ++ " " ++
     (show r) ++ " " ++
     (show $ totalGraphWeight) ++ "\n" ++
-    showEdges es
+    (showEdges es "")
   where
     maxVertex (v':vs') = if v' > maxVertex vs' then v' else maxVertex vs'
     maxVertex []       = 0
