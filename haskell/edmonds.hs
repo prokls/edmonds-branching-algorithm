@@ -1,60 +1,35 @@
 import Control.Monad
-import Data.Char
-import Data.List
-import Data.Maybe
-import Text.Printf
+import Data.List (minimumBy, partition, isPrefixOf)
+import Data.Ord (comparing)
+import Data.Set (Set)
+import qualified Data.Set as Set
+import qualified Data.Map as Map
 import System.Exit
 import System.Environment
 
 -- [Graph DATA STRUCTURE]
 
+data Edge = Edge
+  { src :: Integer
+  , dst :: Integer
+  , weight :: Float
+  } deriving (Eq, Show)
+
 data Graph = Graph
   { vertices :: [Integer]
-  , edges    :: [(Integer, Integer, Float)]
+  , edges    :: [Edge]
   , root     :: Integer
-  } deriving (Show)
+  } deriving (Eq, Show)
 
-showIntegerList :: [Integer] -> String
-showIntegerList is = concat $ intersperse " " . map show $ is
+type Vertex = Integer
+type Path = [Edge]
 
-showVertices :: [Integer] -> String
-showVertices vs = showIntegerList vs
+-- [PARSING & REPRESENTATION]
 
-showEdges :: [(Integer, Integer, Float)] -> String
-showEdges []           = []
-showEdges ((s,d,w):es) = (show s) ++ " " ++ (show d) ++ " " ++ (show w) ++ "\n" ++ (showEdges es)
-
-showRoot :: Integer -> String
-showRoot r = show r
-
-maxVertex :: [Integer] -> Maybe Integer
-maxVertex []     = Nothing
-maxVertex (v:vs) = case maxVertex vs of
-  Just n -> if n > v then Just n else Just v
-  Nothing -> Just v
-
-maxWeight :: [(Integer, Integer, Float)] -> Maybe Float
-maxWeight []           = Nothing
-maxWeight ((s,d,w):es) = case maxWeight es of
-  Just n -> if n > w then Just n else Just w
-  Nothing -> Just w
-
-minWeight :: [(Integer, Integer, Float)] -> Maybe Float
-minWeight []           = Nothing
-minWeight ((s,d,w):es) = case minWeight es of
-  Just n -> if n < w then Just n else Just w
-  Nothing -> Just w
-
-totalGraphWeight :: [(Integer, Integer, Float)] -> Float
-totalGraphWeight []           = 0.0
-totalGraphWeight ((s,d,w):es) = w + (totalGraphWeight es)
-
--- [PARSING]
-
-readEdgeLine :: String -> (Integer, Integer, Float)
+readEdgeLine :: String -> Edge
 readEdgeLine s = case words s of
-  [s,d,w] -> (read s, read d, read w)
-  true -> (0, 0, 0.0)
+  [s,d,w]   -> (Edge (read s) (read d) (read w))
+  otherwise -> error "Invalid edge line"
 
 readHeaderLine :: String -> (Integer, Integer, Integer)
 readHeaderLine l = case words l of
@@ -69,229 +44,124 @@ fromString' (l:ls) =
     edges = map (readEdgeLine) ls
 
 fromString :: String -> Graph
-fromString src = fromString' (filter (\ v -> not (isPrefixOf "#" v)) (lines src))
-
--- [HELPERS]
-
-minWeightEdge :: Graph -> Integer -> Integer -> Maybe Float
-minWeightEdge (Graph v [] r) s d                        = Nothing
-minWeightEdge (Graph v ((src,dest,weight):edges) r) s d =
-  if src == s && dest == d
-  then case minWeightEdge (Graph v edges r) s d of
-    Just min -> if min > weight then Just weight else Just min
-    Nothing -> Just weight
-  else minWeightEdge (Graph v edges r) s d
-
-maxWeightEdge :: Graph -> Integer -> Integer -> Maybe Float
-maxWeightEdge (Graph v [] r) s d                        = Nothing
-maxWeightEdge (Graph v ((src,dest,weight):edges) r) s d =
-  if src == s && dest == d
-  then case maxWeightEdge (Graph v edges r) s d of
-    Just max -> if max < weight then Just weight else Just max
-    Nothing -> Just weight
-  else maxWeightEdge (Graph v edges r) s d
-
-minWeightDest :: Graph -> Integer -> Maybe Float
-minWeightDest (Graph v [] r) d                        = Nothing
-minWeightDest (Graph v ((src,dest,weight):edges) r) d =
-  if dest == d
-  then case minWeightDest (Graph v edges r) d of
-    Just min -> if min > weight then Just weight else Just min
-    Nothing -> Just weight
-  else minWeightDest (Graph v edges r) d
-
-directlyReachable :: Graph -> Integer -> Integer -> Bool
-directlyReachable (Graph v [] r) src dest = False
-directlyReachable (Graph v ((s,d,w):es) r) src dest =
-  if (s == src) && (d == dest)
-    then True
-    else directlyReachable (Graph v es r) src dest
-
-removeMultiEdges :: Graph -> Graph
-removeMultiEdges (Graph v [] r) = (Graph v [] r)
-removeMultiEdges g = next
+fromString src = fromString' (filter (\ l -> noHash l && noBLine l) (lines src))
   where
-    (Graph v (e:es) r) = g
-    (s,d,w)            = e
-    minimalWeight      = fromMaybe w (minWeightEdge g s d)
-    exclMultiE         = (filter (\ (src,dst,weight) -> src /= s || dst /= d) es)
-    rec                = removeMultiEdges (Graph v exclMultiE r)
-    next               = (Graph v ((s,d,minimalWeight):(edges rec)) r)
+    noHash = (not . (isPrefixOf "#"))
+    noBLine = (not . (isPrefixOf "b "))
 
-nextEdges :: Graph -> Integer -> [(Integer, Integer, Float)]
-nextEdges (Graph v es r) start = filter (\ (s, d, w) -> s == start) es
+showEdges :: [Edge] -> String
+showEdges []     = ""
+showEdges (e:es) = (show $ src e) ++ " " ++ (show $ dst e) ++ " " ++
+                   (show $ weight e) ++ "\n" ++ (showEdges es)
 
---isCompleteCycle :: Graph -> Bool
---isCompleteCycle (Graph v es r) = s == d
---  where
---    (s, _) = head es
---    (_, d) = last es
-
--- Does Graph's edges visit the given vertex anytime?
-reaches :: Graph -> Integer -> Bool
-reaches (Graph v [] r) vertex               = False
-reaches (Graph v [(from,to,w)] r) vertex    = from == vertex || to == vertex
-reaches (Graph v ((from,to,w):es) r) vertex =
-  if from == vertex
-    then True
-    else reaches (Graph v es r) vertex
-
--- Is any path described by Graph's edges visited more than once?
-isRevisiting :: Graph -> Bool
-isRevisiting (Graph v [] r)               = False
-isRevisiting (Graph v ((from,to,w):es) r) =
-  if reaches (Graph v es r) from
-    then True
-    else isRevisiting (Graph v es r)
-
--- Find cyclic subgraph using depth first search starting from any of vertices
-dfs'' :: Graph -> [(Integer, Integer, Float)] -> Graph -> Maybe Graph
-dfs'' base [] accu = Nothing
-dfs'' base (option:options) accu = case ret of
-    Just cycle -> Just cycle
-    Nothing -> dfs'' base options accu
+toString :: Graph -> String
+toString (Graph vs es r) =
+    (show $ maxVertex vs) ++ " " ++
+    (show $ length es) ++ " " ++
+    (show r) ++ " " ++
+    (show $ totalGraphWeight) ++ "\n" ++
+    showEdges es
   where
-    (Graph v e r) = accu
-    (s,d,w) = option
-    uniqV1 = if elem s v then v else s:v
-    uniqV2 = if elem d uniqV1 then uniqV1 else d:uniqV1
-    ret = dfs' base 0 (Graph uniqV2 (e ++ [option]) r) -- unidiomatic
+    maxVertex (v':vs') = if v' > maxVertex vs' then v' else maxVertex vs'
+    maxVertex []       = 0
+    totalGraphWeight   = sum $ map weight es
 
-dfs' :: Graph -> Integer -> Graph -> Maybe Graph
-dfs' base 0 (Graph _ [] _) = Nothing
-dfs' base 0 (Graph v path r) =
-  if isRevisiting (Graph v path r)
-    then Just (Graph v path r)
-    else dfs'' base options (Graph v path r)
+-- [AUXILIARY FUNCTIONS]
+
+minWeightEdge :: [Edge] -> Edge
+minWeightEdge [] = error "Missing an edge"
+minWeightEdge es = minimumBy (comparing weight) es
+
+getCycle :: Path -> Path
+getCycle p =
+    dropWhile (\ e -> Set.member (src e) reached) p
   where
-    (Graph _ edges _) = base
-    (s, d, w)         = last path
-    options           = filter (\ e -> notElem e path) (nextEdges base d)
-dfs' base start (Graph v path r) =
-    dfs'' base options (Graph v path r)
+    srcs = Set.fromList $ map src p
+    dsts = Set.fromList $ map dst p
+    reached = Set.union srcs dsts
+
+dfs :: [Edge] -> Path -> Vertex -> [Path]
+dfs es base r =
+    [e:base | e <- deadEdges] ++
+      (concat [(dfs es (e:base) r) | e <- nextEdges])
   where
-    options           = filter (\ e -> notElem e path) (nextEdges base start)
+    srcs = Set.fromList $ map src base
+    dsts = Set.fromList $ map dst base
+    reachedVertices = Set.union srcs dsts
+    start = if null base then r else (src $ last es)
+    newEdges = filter (\ e -> (notElem e base) && (src e) == start) es
+    contEdges = filter (\ e -> Set.member (src e) reachedVertices) newEdges
+    revisit e = Set.member (dst e) reachedVertices
+    (deadEdges, nextEdges) = partition revisit contEdges
 
+-- [EDMONDS HELPERS]
 
-dfs :: Graph -> [Integer] -> Maybe Graph
-dfs base []           = Nothing
-dfs base (v:vertices) =
-  case rec of
-    Just cycle -> if start == end then Just cycle else dfs base vertices
-    Nothing -> dfs base vertices
+removeMultiEdges :: [Edge] -> [Edge]
+removeMultiEdges []           = []
+removeMultiEdges gedges@(e:_) =
+  minEdge:(removeMultiEdges different)
   where
-    (Graph vs _ root) = base
-    rec              = dfs' base v (Graph [] [] root)
-    (start, _, _)    = head (edges $ fromMaybe (Graph [] [] 0) rec)
-    (_, end, _)      = last (edges $ fromMaybe (Graph [] [] 0) rec)
+    (alike, different) = partition (\ e' -> (src e, dst e) == (src e', dst e')) gedges
+    minEdge            = minWeightEdge alike
 
-someCycleGraph :: Graph -> Maybe Graph
-someCycleGraph (Graph v e r) = dfs (Graph v e r) v
-
-cheapestEdges :: Graph -> Graph
-cheapestEdges graph =
-  (Graph (vertices graph) ((s,d,mw):uniqueEdges) (root graph))
+cheapestEdges :: [Edge] -> [Edge]
+cheapestEdges []     = []
+cheapestEdges gedges@(e:_) =
+  cheapestEdge:(cheapestEdges different)
   where
-    ((s,d,w):es) = edges graph
-    mw           = fromMaybe 0.0 $ minWeightDest graph d
-    uniqueEdges  = (filter (\ (src,dst,weight) -> src /= s || dst /= d) es)
+    (alike, different) = partition ((== (dst e)) . dst) gedges
+    cheapestEdge       = minWeightEdge alike
 
-removeEdgesByDest :: Graph -> Integer -> Graph
-removeEdgesByDest (Graph v e r) d = (Graph v (filter (\ (src,dst,weight) -> dst /= d) e) r)
 
 -- [EDMONDS BRANCHING ALGORITHM]
 
-vertexInCycle :: Graph -> Integer -> Bool
-vertexInCycle g vertex = elem vertex (vertices g)
-
-edgeInCycle :: Graph -> (Integer, Integer, Float) -> Bool
-edgeInCycle g e = elem e (edges g)
-
-newVertex :: Graph -> Integer
-newVertex g = (maximum $ vertices g) + 1
-
-incoming :: Graph -> Integer -> Maybe (Integer, Integer, Float)
-incoming g dst =
-  if length incomings > 0
-  then Just $ head incomings
-  else Nothing
+edmondsEdge :: Edge -> [Edge] -> Set Vertex -> Vertex -> Edge
+edmondsEdge edge@(Edge u v w) es cycleVertices contractVertex
+    | not uInC && vInC     = (Edge u contractVertex (w - cheapW))
+    | uInC && not vInC     = (Edge contractVertex v w)
+    | not uInC && not vInC = edge
   where
-    incomings = filter (\ (s,d,w) -> d == dst) (edges g)
+    cheapW = minimum $ map weight $ filter ((== v) . dst) es
+    uInC = (Set.member u cycleVertices)
+    vInC = (Set.member v cycleVertices)
 
-weight :: (Integer, Integer, Float) -> Float
-weight (s,d,w) = w
-
-mapEdge :: Graph -> Integer -> (Integer, Integer, Float) -> Graph -> ((Integer, Integer, Float), (Integer, Integer, Float))
-mapEdge g v_c (s,d,w) cycle =
-  ((s,d,w),
-  if not (vertexInCycle cycle s) && vertexInCycle cycle d
-  then
-    (s, v_c, w - (weight (fromMaybe (0,0,0.0) (incoming g d))))
-  else if vertexInCycle cycle s && not (vertexInCycle cycle d) then
-    (v_c, d, w)
-  else
-    (s,d,w))
-
-lookupOld :: (Integer, Integer, Float) -> [(Integer, Integer, Float)] -> [(Integer, Integer, Float)] -> Maybe (Integer, Integer, Float)
-lookupOld newEdge _ [] = Nothing
-lookupOld newEdge [] _ = Nothing
-lookupOld newEdge (o:old) (e:new) =
-  if e == newEdge then Just o else lookupOld newEdge old new
-
-recurseEdmonds :: Graph -> Integer -> Graph -> Graph
-recurseEdmonds cheapG v_c cycle = 
-    (Graph (vertices cheapG) (nEC ++ nEs) (root cheapG))
-    -- create new graph
-    -- remember correspondence
-    -- invoke computeEdmonds
-    -- map back
-    -- remove one edge
-    -- return graph
+edmondsCycle :: Graph -> [Edge] -> Graph
+edmondsCycle g' cycle =
+    (Graph (vertices g') (filter (/= inCycleUv) (edges g')) (root g'))
   where
-    mapped = map (\ e -> mapEdge cheapG v_c e cycle) (edges cheapG)
-    (oldEdges, newEdges) = unzip mapped
---
-    (Graph vs es r) = computeEdmonds (Graph (v_c:vertices cheapG) newEdges (root cheapG))
-    (u,v,w) = fromMaybe (0,0,0.0) $ case (incoming (Graph vs es r) v_c) of
-       Just i -> lookupOld i oldEdges newEdges
-       Nothing -> error "Edge got lost - internal error"
-    nEs = map (\ e -> fromMaybe (0,0,0.0) $ lookupOld e oldEdges newEdges) es
-    discardEdge = case incoming cycle v of
-      Just edge -> edge
-      Nothing -> (0,0,0.0)
-    nEC = filter (/= discardEdge) (edges cycle)
+    newVertex = (maximum $ vertices g') + 1
+    cycleVertices = Set.insert (src $ head cycle) $ Set.fromList $ map dst cycle
+    edEdge e = (edmondsEdge e (edges g') cycleVertices newVertex)
+    associatedEdges = [(e, edEdge e) | e <- (edges g')]
+    recurse = (edmonds (Graph (newVertex:(vertices g')) (map snd associatedEdges) (root g')))
+    uv = (head $ filter ((== newVertex) . dst) (edges recurse)) :: Edge
+    oldUv = snd $ head $ filter (\ (o, n) -> n == uv) associatedEdges
+    inCycleUv = head $ filter ((== (dst oldUv)) . dst) cycle
 
-
-computeEdmonds :: Graph -> Graph
-computeEdmonds g =
-  if isJust cycle
-  then recurseEdmonds cheapG v_c (fromMaybe (Graph [] [] 0) cycle)
-  else cheapG
+edmonds :: Graph -> Graph
+edmonds g@(Graph vs es r) =
+    if null cycles
+    then (Graph vs cheapEdges r)
+    else (edmondsCycle (Graph vs cheapEdges r) (head cycles))
   where
-    redG   = removeMultiEdges $ removeEdgesByDest g (root g)
-    cheapG = cheapestEdges redG
-    cycle  = someCycleGraph cheapG
-    v_c    = newVertex cheapG
+    notToRoot = filter ((/= r) . dst) es
+    reducedEdges = (removeMultiEdges es) -- notToRoot
+    cheapEdges = (cheapestEdges es)
+    paths = (dfs cheapEdges [] r)
+    cycles = filter (not . null) (map getCycle paths)
 
-toString :: Graph -> String
-toString (Graph v e r) =
-  (show (fromMaybe 0 (maxVertex v))) ++ " " ++
-  (show (length e)) ++ " " ++
-  (show r) ++ " " ++
-  (show (totalGraphWeight e)) ++ "\n" ++
-  showEdges e
+-- [MAIN ROUTINE, using monads]
 
 main :: IO ()
-main =
-  do
-    args <- getArgs
-    let argc = length args
-    let filepath = head args
-    if argc == 1
-      then do
-        putStrLn
-          =<< return . toString . computeEdmonds . fromString
-          =<< readFile filepath
-      else do
-        putStrLn "usage: ./edmonds <di.graph>"
-        exitFailure -- (exitWith 1)
+main = do
+  args <- getArgs
+  let argc = length args
+  let filepath = head args
+  if argc == 1
+    then do
+      putStrLn
+        =<< return . toString . edmonds . fromString
+        =<< readFile filepath
+    else do
+      putStrLn "usage: ./edmonds <di.graph>"
+      exitFailure
