@@ -19,7 +19,7 @@ You write a simple text file to specify the digraph. Its structure looks like th
     {edge source} {edge dest} {edge weight}
     ...
 
-and returns text output like the following
+and returns text output like the following::
 
     {# of vertices} {# of edges} {root vertex} {total weight of branching}
     {edge source} {edge dest} {edge weight}
