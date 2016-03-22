@@ -28,8 +28,8 @@ type Path = [Edge]
 
 readEdgeLine :: String -> Edge
 readEdgeLine s = case words s of
-  [s,d,w]   -> (Edge (read s) (read d) (read w))
-  otherwise -> error "Invalid edge line"
+  [s,d,w] -> (Edge (read s) (read d) (read w))
+  _       -> error "Invalid edge line"
 
 readHeaderLine :: String -> (Integer, Integer, Integer)
 readHeaderLine l = case words l of
@@ -37,9 +37,10 @@ readHeaderLine l = case words l of
   _ -> error "Invalid header line"
 
 fromString' :: [String] -> Graph
+fromString' [] = (Graph [] [] 0)
 fromString' (l:ls) =
   case readHeaderLine l of
-    (nrV, nrE, root) -> (Graph [1,2..nrV] edges root)
+    (nrV, _, root) -> (Graph [1,2..nrV] edges root)
   where
     edges = map (readEdgeLine) ls
 
@@ -68,31 +69,75 @@ toString (Graph vs es r) =
 
 -- [AUXILIARY FUNCTIONS]
 
+--takeMiddle :: (a -> Bool) -> (a -> Bool) -> Bool -> [a] -> [a]
+--takeMiddle c1 c2 st (e:es) =
+--  if st
+--  then
+--    if c2 e
+--    then (e:(takeMiddle c1 c2 True es))
+--    else [e]
+--  else
+--    if c1 e
+--    then (takeMiddle c1 c2 False es)
+--    else (e:(takeMiddle c1 c2 True es))
+--takeMiddle _ _ _ [] = []
+
 minWeightEdge :: [Edge] -> Edge
 minWeightEdge [] = error "Missing an edge"
 minWeightEdge es = minimumBy (comparing weight) es
 
+--traverseCycle :: Path -> Set Vertex -> Vertex
+--traverseCycle [] _ = -1
+--traverseCycle (e:p) visited =
+--  if Set.member (dst e) visited
+--  then dst e
+--  else traverseCycle p (Set.insert (dst e) visited)
+
+--getCycle :: Path -> Path
+--getCycle p =
+--    if cycleVertex == -1
+--    then []
+--    else (reverse (dropWhile cond (reverse (dropWhile cond p))))
+--    --takeMiddle ((/= cycleVertex) . dst) ((/= cycleVertex) . src) False p
+--  where
+--    cycleVertex = traverseCycle p (Set.fromList [src $ head p])
+--    cond e = (dst e /= cycleVertex) && (src e /= cycleVertex)
+
+backTraversePath :: (Path, Vertex) -> Path
+backTraversePath ([], _) = []
+backTraversePath ((e:p), v) =
+  if src e == v
+  then (e:p)
+  else (e:(backTraversePath (p, v)))
+
+traversePath :: Path -> Path -> Set Vertex -> (Path, Vertex)
+traversePath [] _ _ = ([], -1)
+traversePath (e:p) path visited =
+  if Set.member (src e) visited
+  then (e:path, src e)
+  else traversePath p (e:path) (Set.insert (src e) visited)
+
 getCycle :: Path -> Path
-getCycle p =
-    dropWhile (\ e -> Set.member (src e) reached) p
-  where
-    srcs = Set.fromList $ map src p
-    dsts = Set.fromList $ map dst p
-    reached = Set.union srcs dsts
+getCycle [] = []
+getCycle p@(e:_) =
+  backTraversePath $ traversePath p [] (Set.fromList [dst e])
+
 
 dfs :: [Edge] -> Path -> Vertex -> [Path]
 dfs es base r =
-    [e:base | e <- deadEdges] ++
-      (concat [(dfs es (e:base) r) | e <- nextEdges])
+    if null newEdges
+    then [base]
+    else
+      [e:base | e <- deadEdges] ++
+        (concat [(dfs es (e:base) (dst e)) | e <- nextEdges])
   where
     srcs = Set.fromList $ map src base
     dsts = Set.fromList $ map dst base
     reachedVertices = Set.union srcs dsts
-    start = if null base then r else (src $ last es)
-    newEdges = filter (\ e -> (notElem e base) && (src e) == start) es
-    contEdges = filter (\ e -> Set.member (src e) reachedVertices) newEdges
+    start = if null base then r else (dst $ head base)
+    newEdges = filter (\ e -> (src e) == start && notElem e base) es
     revisit e = Set.member (dst e) reachedVertices
-    (deadEdges, nextEdges) = partition revisit contEdges
+    (deadEdges, nextEdges) = partition revisit newEdges
 
 -- [EDMONDS HELPERS]
 
@@ -119,35 +164,38 @@ edmondsEdge :: Edge -> [Edge] -> Set Vertex -> Vertex -> Edge
 edmondsEdge edge@(Edge u v w) es cycleVertices contractVertex
     | not uInC && vInC     = (Edge u contractVertex (w - cheapW))
     | uInC && not vInC     = (Edge contractVertex v w)
-    | not uInC && not vInC = edge
+    | otherwise            = edge
   where
     cheapW = minimum $ map weight $ filter ((== v) . dst) es
-    uInC = (Set.member u cycleVertices)
-    vInC = (Set.member v cycleVertices)
+    uInC = Set.member u cycleVertices
+    vInC = Set.member v cycleVertices
 
-edmondsCycle :: Graph -> [Edge] -> Graph
+edmondsCycle :: Graph -> Path -> Graph
 edmondsCycle g' cycle =
-    (Graph (vertices g') (filter (/= inCycleUv) (edges g')) (root g'))
+    (Graph (vertices g') (concat [(filter (/= inCycleUv) cycleEdges), map unmapEdge (edges recurse)]) (root g'))
   where
     newVertex = (maximum $ vertices g') + 1
     cycleVertices = Set.insert (src $ head cycle) $ Set.fromList $ map dst cycle
-    edEdge e = (edmondsEdge e (edges g') cycleVertices newVertex)
-    associatedEdges = [(e, edEdge e) | e <- (edges g')]
-    recurse = (edmonds (Graph (newVertex:(vertices g')) (map snd associatedEdges) (root g')))
-    uv = (head $ filter ((== newVertex) . dst) (edges recurse)) :: Edge
-    oldUv = snd $ head $ filter (\ (o, n) -> n == uv) associatedEdges
-    inCycleUv = head $ filter ((== (dst oldUv)) . dst) cycle
+    inCycle e = (Set.member (src e) cycleVertices && Set.member (dst e) cycleVertices)
+    (cycleEdges, otherEdges) = partition inCycle (edges g')
+    mapEdge e = edmondsEdge e (edges g') cycleVertices newVertex
+    associatedEdges = [(e, mapEdge e) | e <- otherEdges]
+    recurse = edmonds (Graph (newVertex:(vertices g')) (map snd associatedEdges) (root g'))
+    unmapEdge e = fst $ head $ filter ((== e) . snd) associatedEdges
+    uvc = head $ filter ((== newVertex) . dst) (edges recurse)
+    uv = unmapEdge uvc
+    inCycleUv = head $ filter ((== (dst uv)) . dst) cycle
 
 edmonds :: Graph -> Graph
 edmonds g@(Graph vs es r) =
     if null cycles
     then (Graph vs cheapEdges r)
-    else (edmondsCycle (Graph vs cheapEdges r) (head cycles))
+    else (edmondsCycle g (head cycles))
   where
     notToRoot = filter ((/= r) . dst) es
-    reducedEdges = (removeMultiEdges es) -- notToRoot
-    cheapEdges = (cheapestEdges es)
-    paths = (dfs cheapEdges [] r)
+    reducedEdges = (removeMultiEdges notToRoot)
+    cheapEdges = (cheapestEdges reducedEdges)
+    paths = filter (not . null) $ concat $ map (\ v -> (dfs cheapEdges [] v)) vs
     cycles = filter (not . null) (map getCycle paths)
 
 -- [MAIN ROUTINE, using monads]
