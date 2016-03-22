@@ -69,39 +69,9 @@ toString (Graph vs es r) =
 
 -- [AUXILIARY FUNCTIONS]
 
---takeMiddle :: (a -> Bool) -> (a -> Bool) -> Bool -> [a] -> [a]
---takeMiddle c1 c2 st (e:es) =
---  if st
---  then
---    if c2 e
---    then (e:(takeMiddle c1 c2 True es))
---    else [e]
---  else
---    if c1 e
---    then (takeMiddle c1 c2 False es)
---    else (e:(takeMiddle c1 c2 True es))
---takeMiddle _ _ _ [] = []
-
 minWeightEdge :: [Edge] -> Edge
 minWeightEdge [] = error "Missing an edge"
 minWeightEdge es = minimumBy (comparing weight) es
-
---traverseCycle :: Path -> Set Vertex -> Vertex
---traverseCycle [] _ = -1
---traverseCycle (e:p) visited =
---  if Set.member (dst e) visited
---  then dst e
---  else traverseCycle p (Set.insert (dst e) visited)
-
---getCycle :: Path -> Path
---getCycle p =
---    if cycleVertex == -1
---    then []
---    else (reverse (dropWhile cond (reverse (dropWhile cond p))))
---    --takeMiddle ((/= cycleVertex) . dst) ((/= cycleVertex) . src) False p
---  where
---    cycleVertex = traverseCycle p (Set.fromList [src $ head p])
---    cond e = (dst e /= cycleVertex) && (src e /= cycleVertex)
 
 backTraversePath :: (Path, Vertex) -> Path
 backTraversePath ([], _) = []
@@ -121,7 +91,6 @@ getCycle :: Path -> Path
 getCycle [] = []
 getCycle p@(e:_) =
   backTraversePath $ traversePath p [] (Set.fromList [dst e])
-
 
 dfs :: [Edge] -> Path -> Vertex -> [Path]
 dfs es base r =
@@ -198,7 +167,7 @@ edmonds g@(Graph vs es r) =
     paths = filter (not . null) $ concat $ map (\ v -> (dfs cheapEdges [] v)) vs
     cycles = filter (not . null) (map getCycle paths)
 
--- [MAIN ROUTINE, using monads]
+-- [MAIN ROUTINE]
 
 main :: IO ()
 main = do
